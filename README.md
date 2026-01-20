@@ -1,4 +1,4 @@
-# Poly-Terminal
+# Polymath
 
 A professional-grade terminal interface for analyzing and trading on Polymarket prediction markets. Built with Next.js 15 and FastAPI, featuring real-time data, AI-powered analysis, Monte Carlo simulations, and advanced risk management tools.
 
