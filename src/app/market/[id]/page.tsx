@@ -9,6 +9,7 @@ import { usePortfolioStore } from '@/lib/portfolio-store';
 import { RefreshCw, Brain, TrendingUp, TrendingDown, Minus, X, BarChart3, Shuffle, Shield, Calculator, Sparkles, Newspaper, MessageSquare, Zap, Briefcase, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import { PriceChart } from '@/components/charts/price-chart';
 import { Orderbook } from '@/components/orderbook';
+import { SlippageCalculator } from '@/components/slippage-calculator';
 import { NewsTicker } from '@/components/news-ticker';
 import { PositionBuilder } from '@/components/position-builder';
 import { PayoffCurve } from '@/components/charts/payoff-curve';
@@ -873,6 +874,10 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
 
             <div className="mt-4 pt-3 border-t border-border">
               <Orderbook data={orderbook || defaultOrderbook} />
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-border">
+              <SlippageCalculator data={orderbook} />
             </div>
 
               {market.description && (
