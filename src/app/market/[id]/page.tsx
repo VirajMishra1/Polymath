@@ -10,6 +10,7 @@ import { RefreshCw, Brain, TrendingUp, TrendingDown, Minus, X, BarChart3, Shuffl
 import { PriceChart } from '@/components/charts/price-chart';
 import { Orderbook } from '@/components/orderbook';
 import { SlippageCalculator } from '@/components/slippage-calculator';
+import { NewsDigestModal } from '@/components/news-digest-modal';
 import { NewsTicker } from '@/components/news-ticker';
 import { PositionBuilder } from '@/components/position-builder';
 import { PayoffCurve } from '@/components/charts/payoff-curve';
@@ -520,6 +521,7 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
     const [avgPrice, setAvgPrice] = useState(50);
     const [selectedAnalysisType, setSelectedAnalysisType] = useState<AnalysisMode>('ai');
     const [activeTab, setActiveTab] = useState<'trade' | 'payoff' | 'timing' | 'hedge'>('trade');
+    const [showNewsDigest, setShowNewsDigest] = useState(false);
     
     const [selectedPriceEvent, setSelectedPriceEvent] = useState<PriceEvent | null>(null);
     const [allMarketArticles, setAllMarketArticles] = useState<MarketArticle[]>([]);
@@ -974,6 +976,19 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
                           Gap between news sentiment & price
                         </p>
                       </button>
+
+                      <button
+                        onClick={() => setShowNewsDigest(true)}
+                        className="w-full p-2 border border-border hover:border-cyan-500/50 text-left transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Newspaper className="w-3 h-3 text-cyan-400" />
+                          <span className="text-xs font-bold font-mono text-cyan-400">News Digest · 30d</span>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground font-mono mt-0.5 ml-5">
+                          Themes, timeline & catalysts across 30 days
+                        </p>
+                      </button>
                     </div>
                     
                     {aiError && (
@@ -1273,6 +1288,10 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
             </div>
           </div>
         </div>
+      )}
+
+      {showNewsDigest && market && (
+        <NewsDigestModal question={market.question} onClose={() => setShowNewsDigest(false)} />
       )}
 
       {showAnalysisModal && (analysisMode === 'ai' || analysisMode === 'math') && aiAnalysis && (
