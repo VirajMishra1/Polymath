@@ -29,27 +29,44 @@ function pearson(a: number[], b: number[]): number {
 }
 
 // Align two price series to common timestamps via linear interpolation
-function alignSeries(a: PricePoint[], b: PricePoint[]): [number[], number[]] {
-  if (a.length === 0 || b.length === 0) return [[], []];
+function alignSeries(a: PricePoint[], b: PricePoint[]): { a: number[]; b: number[]; t: number[] } {
+  if (a.length === 0 || b.length === 0) return { a: [], b: [], t: [] };
 
   // Use b's timestamps as reference, find matching prices in a
   const aMap = new Map(a.map(p => [p.t, p.p]));
-  const aligned: [number, number][] = [];
+  const aligned: { a: number; b: number; t: number }[] = [];
 
   for (const bPoint of b) {
     const aPrice = aMap.get(bPoint.t);
     if (aPrice !== undefined) {
-      aligned.push([aPrice, bPoint.p]);
+      aligned.push({ a: aPrice, b: bPoint.p, t: bPoint.t });
     }
   }
 
-  // If no exact matches, use interpolation
+  // If no exact matches, fall back to positional alignment using b's timestamps
   if (aligned.length < 3) {
     const minLen = Math.min(a.length, b.length);
-    return [a.slice(0, minLen).map(p => p.p), b.slice(0, minLen).map(p => p.p)];
+    return {
+      a: a.slice(0, minLen).map(p => p.p),
+      b: b.slice(0, minLen).map(p => p.p),
+      t: b.slice(0, minLen).map(p => p.t),
+    };
   }
 
-  return [aligned.map(x => x[0]), aligned.map(x => x[1])];
+  return { a: aligned.map(x => x.a), b: aligned.map(x => x.b), t: aligned.map(x => x.t) };
+}
+
+// Rolling Pearson over a sliding window. Returns one correlation per end-of-window.
+function rollingPearson(a: number[], b: number[], window: number): { idx: number; corr: number }[] {
+  const n = Math.min(a.length, b.length);
+  if (n < window) return [];
+  const out: { idx: number; corr: number }[] = [];
+  for (let end = window; end <= n; end++) {
+    const wa = a.slice(end - window, end);
+    const wb = b.slice(end - window, end);
+    out.push({ idx: end - 1, corr: pearson(wa, wb) });
+  }
+  return out;
 }
 
 export async function POST(req: NextRequest) {
@@ -96,13 +113,42 @@ export async function POST(req: NextRequest) {
       edge: string;
     }[] = [];
 
+    const rollingPairs: {
+      i: number;
+      j: number;
+      overall: number;
+      recent: number;
+      decoupling: boolean;
+      series: number[];
+    }[] = [];
+
     for (let i = 0; i < n; i++) {
       matrix[i][i] = 1;
       for (let j = i + 1; j < n; j++) {
-        const [seriesA, seriesB] = alignSeries(valid[i].history, valid[j].history);
+        const { a: seriesA, b: seriesB } = alignSeries(valid[i].history, valid[j].history);
         const corr = pearson(seriesA, seriesB);
         matrix[i][j] = corr;
         matrix[j][i] = corr;
+
+        // Rolling correlation sparkline: 1/3 of series as window (min 5, max 24)
+        const window = Math.max(5, Math.min(24, Math.floor(seriesA.length / 3)));
+        if (seriesA.length >= window + 3) {
+          const rolling = rollingPearson(seriesA, seriesB, window);
+          if (rolling.length >= 3) {
+            const recentWindow = rolling.slice(-Math.ceil(rolling.length / 4));
+            const recentAvg = recentWindow.reduce((s, v) => s + v.corr, 0) / recentWindow.length;
+            // Decoupling: overall strongly correlated but the recent window broke down
+            const decoupling = Math.abs(corr) >= 0.6 && Math.abs(recentAvg) < Math.abs(corr) - 0.3;
+            rollingPairs.push({
+              i,
+              j,
+              overall: corr,
+              recent: recentAvg,
+              decoupling,
+              series: rolling.map(r => r.corr),
+            });
+          }
+        }
 
         // Detect mispricing: high correlation but prices diverge from historical ratio
         if (Math.abs(corr) >= 0.7 && seriesA.length >= 10) {
@@ -145,6 +191,7 @@ export async function POST(req: NextRequest) {
       })),
       matrix,
       mispricedPairs: mispricedPairs.sort((a, b) => Math.abs(b.divergence) - Math.abs(a.divergence)),
+      rollingPairs,
     });
   } catch (err) {
     console.error('Correlation error:', err);

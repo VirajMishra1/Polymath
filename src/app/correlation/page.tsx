@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, GitMerge, X, Search, AlertTriangle } from 'lucide-react';
+import { RefreshCw, GitMerge, X, Search, AlertTriangle, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CorrelationMarket {
@@ -26,10 +26,37 @@ interface MispricedPair {
   edge: string;
 }
 
+interface RollingPair {
+  i: number;
+  j: number;
+  overall: number;
+  recent: number;
+  decoupling: boolean;
+  series: number[];
+}
+
 interface CorrelationResult {
   markets: CorrelationMarket[];
   matrix: number[][];
   mispricedPairs: MispricedPair[];
+  rollingPairs?: RollingPair[];
+}
+
+function Sparkline({ series, stroke }: { series: number[]; stroke: string }) {
+  if (series.length < 2) return null;
+  const width = 80;
+  const height = 20;
+  // Correlation is in [-1, 1]; pin the y-axis to that range so sparklines are comparable
+  const yFor = (v: number) => height - ((v + 1) / 2) * height;
+  const xFor = (i: number) => (i / (series.length - 1)) * width;
+  const points = series.map((v, i) => `${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`).join(' ');
+  const midY = yFor(0);
+  return (
+    <svg width={width} height={height} className="inline-block">
+      <line x1={0} y1={midY} x2={width} y2={midY} stroke="currentColor" strokeOpacity={0.2} strokeDasharray="2,2" />
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth={1.25} />
+    </svg>
+  );
 }
 
 function corrColor(corr: number): string {
@@ -252,6 +279,58 @@ export default function CorrelationPage() {
               </div>
             </div>
           </div>
+
+          {/* Rolling correlation sparklines */}
+          {result.rollingPairs && result.rollingPairs.length > 0 && (
+            <div className="border border-border bg-black">
+              <div className="px-4 py-2 border-b border-border flex items-center gap-2">
+                <Activity className="w-3 h-3 text-cyan-400" />
+                <span className="text-[10px] text-cyan-400 uppercase tracking-wider">
+                  Rolling Correlation (sliding window)
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {result.rollingPairs
+                  .slice()
+                  .sort((a, b) => Number(b.decoupling) - Number(a.decoupling) || Math.abs(b.overall) - Math.abs(a.overall))
+                  .map((rp, k) => {
+                    const stroke = rp.decoupling
+                      ? '#ff6b6b'
+                      : rp.overall >= 0
+                      ? '#00ff41'
+                      : '#ffa500';
+                    return (
+                      <div key={k} className="flex items-center justify-between px-4 py-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-[10px] text-cyan-400 border border-cyan-500/50 px-1.5 py-0.5 flex-shrink-0">
+                            M{rp.i + 1}×M{rp.j + 1}
+                          </span>
+                          {rp.decoupling && (
+                            <span className="text-[9px] text-terminal-red border border-terminal-red/50 px-1.5 py-0.5 font-bold uppercase">
+                              Decoupling
+                            </span>
+                          )}
+                          <div className={cn('flex-shrink-0', corrColor(rp.overall))}>
+                            <Sparkline series={rp.series} stroke={stroke} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-[10px] font-mono flex-shrink-0">
+                          <span className="text-muted-foreground">
+                            avg: <span className={corrColor(rp.overall)}>{rp.overall.toFixed(2)}</span>
+                          </span>
+                          <span className="text-muted-foreground">
+                            recent: <span className={corrColor(rp.recent)}>{rp.recent.toFixed(2)}</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="px-4 py-2 border-t border-border text-[9px] text-muted-foreground">
+                Decoupling pairs (recent window &gt;0.30 below overall) may signal regime change or a pair trade reverting.
+              </div>
+            </div>
+          )}
 
           {/* Mispriced pairs */}
           {result.mispricedPairs.length > 0 ? (
