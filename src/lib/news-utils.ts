@@ -84,19 +84,27 @@ export async function fetchNewsForQuery(query: string, max = 5): Promise<NewsIte
   }
 }
 
+const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+
 export async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  let lastError = '';
+  for (const model of GEMINI_MODELS) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     }
-  );
-  if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Gemini ${res.status}: ${body.slice(0, 200)}`);
+    lastError = `${model} ${res.status}`;
+    // Only retry on 503 (overloaded) — quota errors won't be fixed by switching models of the same tier
+    if (res.status !== 503) break;
   }
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  throw new Error(lastError);
 }
