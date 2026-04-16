@@ -416,31 +416,15 @@ function PriceEventModal({
                 "text-xl font-bold font-mono",
                 event.priceChangePct < 0 ? "text-terminal-red" : "text-cyan-500"
               )}>
-                {event.priceChangePct >= 0 ? '+' : ''}{event.priceChangePct.toFixed(1)}%
+                {event.priceChangePct >= 0 ? '+' : ''}{(event.priceChangePct * 100).toFixed(1)}%
               </div>
             </div>
             <div className="border border-border p-3 bg-black/50">
               <div className="text-[9px] text-muted-foreground uppercase mb-1 font-mono">Significance</div>
               <div className="text-xl font-bold font-mono text-terminal-amber">
-                {event.significance}/10
+                {(event.significance * 10).toFixed(1)}/10
               </div>
             </div>
-          </div>
-
-          <div className={cn(
-            "border p-4 bg-black/50",
-            event.type === 'dip' ? "border-terminal-red/50" : "border-cyan-500/50"
-          )}>
-            <div className="flex items-center gap-2 mb-2">
-              <Brain className={cn(
-                "w-4 h-4",
-                event.type === 'dip' ? "text-terminal-red" : "text-cyan-500"
-              )} />
-              <span className="text-[10px] text-muted-foreground uppercase font-mono">AI Analysis</span>
-            </div>
-            <p className="text-sm text-muted-foreground font-mono leading-relaxed">
-              {event.aiAnalysis || `This ${Math.abs(event.priceChangePct).toFixed(1)}% ${event.type} occurred due to market dynamics. Click "View All Articles" to explore related news and discussions.`}
-            </p>
           </div>
 
           <div>
@@ -482,11 +466,6 @@ function PriceEventModal({
           </div>
         </div>
         
-        <div className="border-t border-border p-3 bg-black">
-          <div className="text-[9px] text-muted-foreground font-mono text-center">
-            Analysis based on news sentiment, social media discussions, and market data
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -688,8 +667,12 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
           }),
           new Promise(resolve => setTimeout(resolve, 1500)),
         ]);
-        if (!response.ok) throw new Error('Signal fetch failed');
         const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error === 'Gemini not configured'
+            ? 'GEMINI_API_KEY not set on server'
+            : (data.error ?? 'News signal failed'));
+        }
         setNewsSignal(data.signal);
         setAnalysisMode('signal');
         setShowCalculatingModal(false);
