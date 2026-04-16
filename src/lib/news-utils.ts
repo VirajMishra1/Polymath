@@ -90,9 +90,9 @@ export async function fetchNewsForQuery(query: string, max = 5): Promise<NewsIte
 }
 
 const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-export async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  let lastError = '';
+async function tryGemini(prompt: string, apiKey: string): Promise<string | null> {
   for (const model of GEMINI_MODELS) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -110,16 +110,53 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
         const data = await res.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       }
-      lastError = `${model} ${res.status}`;
-      // Fall back to the next model on transient overload (503) OR per-model
-      // quota exhaustion (429) — each Gemini model has its own free-tier limit.
+      // 503 (overload) and 429 (per-model quota) are retryable on the next model.
+      // Anything else is structural and won't get better by switching models.
       if (res.status !== 503 && res.status !== 429) break;
-    } catch (err) {
-      lastError = `${model} ${(err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message}`;
+    } catch {
       break;
     } finally {
       clearTimeout(timer);
     }
   }
-  throw new Error(lastError);
+  return null;
+}
+
+async function tryGroq(prompt: string, apiKey: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.5,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`groq ${res.status}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Tries Gemini first (free, already paid for in the user's free tier), then
+// falls back to Groq on quota/overload/network failure.
+export async function callGemini(prompt: string, geminiKey: string): Promise<string> {
+  try {
+    const result = await tryGemini(prompt, geminiKey);
+    if (result !== null && result !== '') return result;
+  } catch {
+    // fall through to Groq
+  }
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) throw new Error('gemini failed and GROQ_API_KEY not configured');
+  return tryGroq(prompt, groqKey);
 }
