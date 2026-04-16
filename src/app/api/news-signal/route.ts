@@ -94,15 +94,16 @@ INSUFFICIENT_DATA = headlines don't speak to this question`;
           sentiment: parsed.headlineSentiments?.[i] ?? 'NEUTRAL',
         })),
       };
-    } catch {
+    } catch (geminiErr) {
       // Gemini failed — return headlines without AI analysis
+      console.error('Gemini call failed in news-signal:', geminiErr);
       signal = {
         currentPrice,
         impliedProbability: null,
         gap: null,
         signal: 'INSUFFICIENT_DATA',
         confidence: 'LOW',
-        reasoning: 'AI analysis unavailable. Review headlines manually.',
+        reasoning: `AI analysis unavailable (${geminiErr instanceof Error ? geminiErr.message : 'unknown error'}). Review headlines manually.`,
         headlines: headlines.map(h => ({
           title: h.title,
           source: h.source,
