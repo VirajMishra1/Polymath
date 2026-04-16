@@ -21,7 +21,13 @@ export interface Mover {
 
 export async function GET() {
   try {
-    const rawMarkets = await getMarkets({ limit: 100 });
+    const rawMarkets = await getMarkets({
+      limit: 200,
+      active: true,
+      closed: false,
+      order: 'volume24hr',
+      ascending: false,
+    });
 
     // Polymarket returns outcomePrices as a JSON string (e.g. '["0.35","0.65"]'),
     // not a real array — parse defensively before reading.
