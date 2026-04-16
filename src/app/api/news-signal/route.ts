@@ -103,7 +103,7 @@ INSUFFICIENT_DATA = headlines don't speak to this question`;
         gap: null,
         signal: 'INSUFFICIENT_DATA',
         confidence: 'LOW',
-        reasoning: `AI analysis unavailable (${geminiErr instanceof Error ? geminiErr.message : 'unknown error'}). Review headlines manually.`,
+        reasoning: 'AI analysis temporarily unavailable. Review headlines manually.',
         headlines: headlines.map(h => ({
           title: h.title,
           source: h.source,
