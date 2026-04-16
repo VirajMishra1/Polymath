@@ -111,8 +111,9 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
         return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       }
       lastError = `${model} ${res.status}`;
-      // Only retry on 503 (overloaded) — quota errors won't be fixed by switching models of the same tier
-      if (res.status !== 503) break;
+      // Fall back to the next model on transient overload (503) OR per-model
+      // quota exhaustion (429) — each Gemini model has its own free-tier limit.
+      if (res.status !== 503 && res.status !== 429) break;
     } catch (err) {
       lastError = `${model} ${(err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message}`;
       break;

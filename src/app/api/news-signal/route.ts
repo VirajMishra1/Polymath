@@ -11,6 +11,18 @@ export interface NewsSignal {
   headlines: { title: string; source: string; timestamp: string; url: string; sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' }[];
 }
 
+// In-memory cache keyed by (question, price-bucket). Gemini free tier has a
+// ~1k req/day limit per model; without this a single user refreshing the
+// market page burns through quota fast.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const signalCache = new Map<string, { at: number; signal: NewsSignal }>();
+
+function cacheKey(question: string, currentPrice: number) {
+  // Bucket price to 2¢ so minor ticks don't blow the cache
+  const bucket = Math.round(currentPrice * 50) / 50;
+  return `${question}|${bucket}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { question, currentPrice } = await req.json() as { question: string; currentPrice: number };
@@ -19,6 +31,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'question and currentPrice required' }, { status: 400 });
     }
     const safeQuestion = question.slice(0, 300);
+
+    const key = cacheKey(safeQuestion, currentPrice);
+    const cached = signalCache.get(key);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      return NextResponse.json({ signal: cached.signal, cached: true });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -115,6 +133,11 @@ INSUFFICIENT_DATA = headlines don't speak to this question`;
           sentiment: 'NEUTRAL' as const,
         })),
       };
+    }
+
+    // Only cache successful analyses — don't pin the quota-exhausted fallback
+    if (signal.signal !== 'INSUFFICIENT_DATA') {
+      signalCache.set(key, { at: Date.now(), signal });
     }
 
     return NextResponse.json({ signal });
