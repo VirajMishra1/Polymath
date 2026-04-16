@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
         try {
           const market = await getMarketById(id);
           if (!market) return { id, market: null, history: [] };
-          const tokenId = market.clobTokenIds?.[0];
+          // clobTokenIds comes back as a JSON string, not a real array
+          const tokenId = parseJsonArraySafe(market.clobTokenIds as unknown as string)[0];
           if (!tokenId) return { id, market, history: [] };
           const history = await getPriceHistory(tokenId, '1w');
           return { id, market, history };
