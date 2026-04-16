@@ -50,7 +50,7 @@ export const usePortfolioStore = create<PortfolioState>()(
       addPosition: (position) => set((state) => ({
         positions: [...state.positions, {
           ...position,
-          id: `pos-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `pos-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
           timestamp: Date.now()
         }]
       })),
@@ -70,7 +70,7 @@ export const usePortfolioStore = create<PortfolioState>()(
       addExternalHedge: (hedge) => set((state) => ({
         externalHedges: [...state.externalHedges, {
           ...hedge,
-          id: `hedge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          id: `hedge-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
         }]
       })),
       
@@ -85,11 +85,12 @@ export const usePortfolioStore = create<PortfolioState>()(
       })),
       
       getPositionPnL: (position) => {
+        // Both avgPrice and currentPrice are stored as the *side's* share price
+        // (for NO positions, callers convert via 1 - yesPrice before writing).
+        // So P&L is simply (current - entry) * quantity regardless of side.
         const currentValue = position.quantity * position.currentPrice;
         const cost = position.quantity * position.avgPrice;
-        const pnl = position.side === 'YES' 
-          ? currentValue - cost 
-          : cost - currentValue;
+        const pnl = currentValue - cost;
         const pnlPercent = cost > 0 ? (pnl / cost) * 100 : 0;
         return { pnl, pnlPercent };
       },

@@ -72,12 +72,15 @@ export interface PriceHistoryPoint {
 
 async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
   for (let i = 0; i < retries; i++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
       const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
         },
         next: { revalidate: 60 },
+        signal: controller.signal,
       });
       if (response.ok) return response;
       if (response.status === 429) {
@@ -88,6 +91,8 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
     } catch (error) {
       if (i === retries - 1) throw error;
       await new Promise(r => setTimeout(r, 500));
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw new Error('Max retries exceeded');
@@ -249,7 +254,7 @@ export function mapPolymarketEventToEvent(pm: PolymarketEvent) {
   };
 }
 
-function parseJsonArraySafe(value: string | string[] | undefined): string[] {
+export function parseJsonArraySafe(value: string | string[] | undefined): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value;
   try {

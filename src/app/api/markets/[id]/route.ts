@@ -1,16 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getMarketById, getOrderbook, getPriceHistory, mapPolymarketMarketToMarket } from '@/lib/polymarket-api';
-
-function parseJsonArraySafe(value: string | string[] | undefined): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+import { getMarketById, getOrderbook, getPriceHistory, mapPolymarketMarketToMarket, parseJsonArraySafe } from '@/lib/polymarket-api';
 
 export async function GET(
   request: Request,

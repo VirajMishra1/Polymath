@@ -27,34 +27,44 @@ export function PriceChart({
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Use a stable signature so fetchPriceEvents doesn't loop when the parent
+  // passes a freshly-constructed `data` array with identical contents.
+  const dataSignature = useMemo(() => {
+    if (data.length === 0) return '';
+    return `${data.length}:${data[0].timestamp}:${data[data.length - 1].timestamp}`;
+  }, [data]);
+
   useEffect(() => {
     if (!marketId || data.length < 5) return;
-    
+    let cancelled = false;
+
     async function fetchPriceEvents() {
       try {
         const priceHistory = data.map((p, idx) => ({
           timestamp: new Date(p.timestamp).getTime() / 1000,
           price: p.price,
-          index: idx
+          index: idx,
         }));
-        
+
         const response = await fetch('/api/price-events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ marketId, priceHistory })
+          body: JSON.stringify({ marketId, priceHistory }),
         });
-        
-        if (response.ok) {
+
+        if (!cancelled && response.ok) {
           const result = await response.json();
           setPriceEvents(result.events || []);
         }
       } catch (error) {
-        console.error('Failed to fetch price events:', error);
+        if (!cancelled) console.error('Failed to fetch price events:', error);
       }
     }
-    
+
     fetchPriceEvents();
-  }, [marketId, data]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketId, dataSignature]);
 
   const filteredData = useMemo(() => {
     if (data.length === 0 || timeRange === 'ALL') return data;
@@ -85,7 +95,7 @@ export function PriceChart({
       currentPrice: prices[prices.length - 1],
       priceChange: ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100
     };
-  }, [data]);
+  }, [filteredData]);
 
   const chartWidth = 800;
   const chartHeight = 200;

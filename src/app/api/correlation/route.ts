@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMarketById, getPriceHistory } from '@/lib/polymarket-api';
+import { getMarketById, getPriceHistory, parseJsonArraySafe } from '@/lib/polymarket-api';
+
+function getYesPrice(m: { outcomePrices?: string | string[] }): number {
+  const arr = parseJsonArraySafe(m.outcomePrices as unknown as string);
+  const v = parseFloat(arr[0] ?? '0.5');
+  return Number.isFinite(v) ? v : 0.5;
+}
 
 export const revalidate = 0; // User-driven, don't cache
 
@@ -101,8 +107,8 @@ export async function POST(req: NextRequest) {
         if (Math.abs(corr) >= 0.7 && seriesA.length >= 10) {
           const historicalRatios = seriesA.map((a, k) => a / (seriesB[k] + 0.001));
           const meanRatio = historicalRatios.reduce((s, v) => s + v, 0) / historicalRatios.length;
-          const p1 = parseFloat(valid[i].market!.outcomePrices?.[0] ?? '0.5');
-          const p2 = parseFloat(valid[j].market!.outcomePrices?.[0] ?? '0.5');
+          const p1 = getYesPrice(valid[i].market!);
+          const p2 = getYesPrice(valid[j].market!);
           const actualRatio = p1 / (p2 + 0.001);
           const divergence = (actualRatio - meanRatio) / (meanRatio + 0.001);
 
@@ -133,7 +139,7 @@ export async function POST(req: NextRequest) {
       markets: valid.map(v => ({
         id: v.id,
         question: v.market!.question,
-        price: parseFloat(v.market!.outcomePrices?.[0] ?? '0.5'),
+        price: getYesPrice(v.market!),
         volume24h: v.market!.volume24hr,
       })),
       matrix,

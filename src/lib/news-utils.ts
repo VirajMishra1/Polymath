@@ -70,17 +70,22 @@ export function parseGoogleNewsRSS(xml: string, max = 5): NewsItem[] {
 }
 
 export async function fetchNewsForQuery(query: string, max = 5): Promise<NewsItem[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
     const res = await fetch(rssUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolyTerminal/1.0)', Accept: 'application/rss+xml, */*' },
       next: { revalidate: 300 },
+      signal: controller.signal,
     });
     if (!res.ok) return [];
     const xml = await res.text();
     return parseGoogleNewsRSS(xml, max);
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -89,22 +94,31 @@ const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 export async function callGemini(prompt: string, apiKey: string): Promise<string> {
   let lastError = '';
   for (const model of GEMINI_MODELS) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+          signal: controller.signal,
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      lastError = `${model} ${res.status}`;
+      // Only retry on 503 (overloaded) — quota errors won't be fixed by switching models of the same tier
+      if (res.status !== 503) break;
+    } catch (err) {
+      lastError = `${model} ${(err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message}`;
+      break;
+    } finally {
+      clearTimeout(timer);
     }
-    const body = await res.text().catch(() => '');
-    lastError = `${model} ${res.status}`;
-    // Only retry on 503 (overloaded) — quota errors won't be fixed by switching models of the same tier
-    if (res.status !== 503) break;
   }
   throw new Error(lastError);
 }

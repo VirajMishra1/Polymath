@@ -7,18 +7,18 @@ import { PayoffCurve } from '@/components/charts/payoff-curve';
 import { TimeDecayVisualizer } from '@/components/time-decay-visualizer';
 import { ExternalHedgePanel } from '@/components/external-hedge-panel';
 import { cn } from '@/lib/utils';
-import { 
-  Briefcase, 
-  TrendingUp, 
-  TrendingDown, 
-  X, 
+import {
+  Briefcase,
+  TrendingUp,
+  TrendingDown,
+  X,
   AlertTriangle,
   PieChart,
   BarChart3,
   Target,
-  Zap,
   ChevronRight,
-  Plus
+  Plus,
+  RefreshCw,
 } from 'lucide-react';
 
 function formatVolume(vol: number) {
@@ -28,13 +28,57 @@ function formatVolume(vol: number) {
 }
 
 export default function PortfolioPage() {
-  const { positions, removePosition, clearPositions, getPositionPnL, getTotalPnL, externalHedges } = usePortfolioStore();
+  const { positions, removePosition, clearPositions, getPositionPnL, getTotalPnL, updatePosition } = usePortfolioStore();
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const refreshPrices = useMemo(() => async () => {
+    const uniqueMarketIds = Array.from(new Set(positions.map(p => p.marketId)));
+    if (uniqueMarketIds.length === 0) return;
+    setRefreshing(true);
+    try {
+      const results = await Promise.all(
+        uniqueMarketIds.map(async (id) => {
+          try {
+            const res = await fetch(`/api/markets/${id}`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const yesPrice = data?.market?.price_yes;
+            if (typeof yesPrice !== 'number' || !Number.isFinite(yesPrice)) return null;
+            return { id, yesPrice };
+          } catch {
+            return null;
+          }
+        })
+      );
+      const priceMap = new Map<string, number>();
+      for (const r of results) if (r) priceMap.set(r.id, r.yesPrice);
+      positions.forEach(p => {
+        const yes = priceMap.get(p.marketId);
+        if (yes === undefined) return;
+        const sideShare = p.side === 'YES' ? yes : 1 - yes;
+        if (Math.abs(sideShare - p.currentPrice) > 1e-6) {
+          updatePosition(p.id, { currentPrice: sideShare });
+        }
+      });
+      setLastRefresh(Date.now());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [positions, updatePosition]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    refreshPrices();
+    // intentionally only on mount — manual refresh button thereafter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   const { totalPnl, totalValue, totalCost } = useMemo(() => {
     if (!mounted) return { totalPnl: 0, totalValue: 0, totalCost: 0 };
@@ -62,21 +106,42 @@ export default function PortfolioPage() {
 
   const riskMetrics = useMemo(() => {
     if (!mounted || positions.length === 0) {
-      return { var95: 0, maxDrawdown: 0, sharpe: 0, winRate: 0 };
+      return { var95: 0, winRate: 0, netExposure: 0, avgImpliedProb: 0 };
     }
-    
-    const profitableCount = positions.filter(p => {
-      const { pnl } = getPositionPnL(p);
-      return pnl > 0;
-    }).length;
-    
-    const var95 = totalCost * 0.15;
-    const maxDrawdown = totalCost * 0.25;
-    const sharpe = totalPnl > 0 ? (totalPnl / totalCost) * 2.5 : -0.5;
-    const winRate = positions.length > 0 ? (profitableCount / positions.length) * 100 : 0;
-    
-    return { var95, maxDrawdown, sharpe, winRate };
-  }, [mounted, positions, totalCost, totalPnl, getPositionPnL]);
+
+    const profitableCount = positions.filter(p => getPositionPnL(p).pnl > 0).length;
+
+    // Parametric VaR assuming independent binary outcomes:
+    // each position contributes variance q^2 * p * (1-p) where p = currentPrice of the held side.
+    // This is an approximation (markets aren't independent, prices aren't stationary) but it's a
+    // real calculation from live data, not a fudge factor.
+    const variance = positions.reduce((acc, p) => {
+      const prob = Math.max(0, Math.min(1, p.currentPrice));
+      return acc + p.quantity * p.quantity * prob * (1 - prob);
+    }, 0);
+    const var95 = 1.645 * Math.sqrt(variance);
+
+    const netExposure = positions.reduce(
+      (acc, p) => acc + p.quantity * p.currentPrice * (p.side === 'YES' ? 1 : -1),
+      0
+    );
+
+    const avgImpliedProb = positions.length > 0
+      ? positions.reduce((acc, p) => acc + p.currentPrice, 0) / positions.length
+      : 0;
+
+    const winRate = (profitableCount / positions.length) * 100;
+
+    return { var95, winRate, netExposure, avgImpliedProb };
+  }, [mounted, positions, getPositionPnL]);
+
+  // Weighted-avg current price for the payoff/time-decay visualizers.
+  const weightedCurrentPrice = useMemo(() => {
+    if (positions.length === 0) return 0.5;
+    const totalQty = positions.reduce((a, p) => a + p.quantity, 0);
+    if (totalQty === 0) return 0.5;
+    return positions.reduce((a, p) => a + p.currentPrice * p.quantity, 0) / totalQty;
+  }, [positions]);
 
   const togglePositionSelection = (id: string) => {
     setSelectedPositions(prev => 
@@ -105,12 +170,27 @@ export default function PortfolioPage() {
           </span>
         </div>
         {positions.length > 0 && (
-          <button
-            onClick={clearPositions}
-            className="text-xs px-3 py-1 border border-terminal-red text-terminal-red hover:bg-terminal-red/10 transition-colors"
-          >
-            Clear All
-          </button>
+          <div className="flex items-center gap-2">
+            {lastRefresh && (
+              <span className="text-[9px] text-muted-foreground">
+                Prices @ {new Date(lastRefresh).toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              onClick={refreshPrices}
+              disabled={refreshing}
+              className="text-xs px-3 py-1 border border-terminal-green text-terminal-green hover:bg-terminal-green/10 transition-colors flex items-center gap-1 disabled:opacity-50"
+            >
+              <RefreshCw className={cn('w-3 h-3', refreshing && 'animate-spin')} />
+              {refreshing ? 'Refreshing' : 'Refresh'}
+            </button>
+            <button
+              onClick={clearPositions}
+              className="text-xs px-3 py-1 border border-terminal-red text-terminal-red hover:bg-terminal-red/10 transition-colors"
+            >
+              Clear All
+            </button>
+          </div>
         )}
       </div>
 
@@ -155,13 +235,12 @@ export default function PortfolioPage() {
           </div>
         </div>
         <div className="border border-border p-3 bg-black">
-          <div className="text-[9px] text-muted-foreground uppercase mb-1">Sharpe Ratio</div>
+          <div className="text-[9px] text-muted-foreground uppercase mb-1">Net Exposure</div>
           <div className={cn(
             "text-xl font-bold",
-            riskMetrics.sharpe > 1 ? "text-terminal-green" : 
-            riskMetrics.sharpe > 0 ? "text-terminal-amber" : "text-terminal-red"
+            riskMetrics.netExposure >= 0 ? "text-terminal-green" : "text-terminal-red"
           )}>
-            {riskMetrics.sharpe.toFixed(2)}
+            {riskMetrics.netExposure >= 0 ? '+' : ''}{formatVolume(riskMetrics.netExposure)}
           </div>
         </div>
       </div>
@@ -186,14 +265,14 @@ export default function PortfolioPage() {
           <div className="col-span-8 space-y-4">
             <PayoffCurve
               positions={aggregatePositions}
-              currentPrice={0.5}
+              currentPrice={weightedCurrentPrice}
               showTimeline
               daysToExpiry={30}
             />
 
             <TimeDecayVisualizer
               positions={aggregatePositions}
-              currentPrice={0.5}
+              currentPrice={weightedCurrentPrice}
               daysToExpiry={30}
             />
 
@@ -385,21 +464,23 @@ export default function PortfolioPage() {
               positions={aggregatePositions}
             />
 
-            <div className="border border-terminal-amber bg-terminal-amber/5 p-3">
+            <div className="border border-border bg-black p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Zap className="w-4 h-4 text-terminal-amber" />
-                <span className="text-[10px] text-terminal-amber font-bold uppercase">Quick Actions</span>
+                <Plus className="w-4 h-4 text-terminal-green" />
+                <span className="text-[10px] text-terminal-green font-bold uppercase">Actions</span>
               </div>
               <div className="space-y-2">
-                <button 
-                  className="w-full py-2 text-xs border border-terminal-green text-terminal-green hover:bg-terminal-green/10 transition-colors"
-                  disabled={selectedPositions.length === 0}
-                >
-                  Close Selected ({selectedPositions.length})
-                </button>
-                <button className="w-full py-2 text-xs border border-terminal-amber text-terminal-amber hover:bg-terminal-amber/10 transition-colors">
-                  Hedge All Positions
-                </button>
+                {selectedPositions.length > 0 && (
+                  <button
+                    onClick={() => {
+                      selectedPositions.forEach(id => removePosition(id));
+                      setSelectedPositions([]);
+                    }}
+                    className="w-full py-2 text-xs border border-terminal-red text-terminal-red hover:bg-terminal-red/10 transition-colors"
+                  >
+                    Close Selected ({selectedPositions.length})
+                  </button>
+                )}
                 <Link
                   href="/"
                   className="block w-full py-2 text-xs text-center bg-terminal-green text-black font-bold hover:bg-terminal-green/80 transition-colors"

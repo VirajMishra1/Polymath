@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getMarkets } from '@/lib/polymarket-api';
+import { getMarkets, parseJsonArraySafe } from '@/lib/polymarket-api';
 import { fetchNewsForQuery, callGemini, type NewsItem } from '@/lib/news-utils';
 
 export const revalidate = 300; // 5-min cache
@@ -23,15 +23,20 @@ export async function GET() {
   try {
     const rawMarkets = await getMarkets({ limit: 100 });
 
-    // Normalize PolymarketMarket fields to camelCase-aware helpers
-    const markets = rawMarkets.map(m => ({
-      id: m.id,
-      question: m.question,
-      price: parseFloat(m.outcomePrices?.[0] ?? '0.5'),
-      change: m.oneDayPriceChange ?? 0,
-      volume24h: m.volume24hr ?? 0,
-      liquidity: parseFloat(m.liquidity ?? '0'),
-    }));
+    // Polymarket returns outcomePrices as a JSON string (e.g. '["0.35","0.65"]'),
+    // not a real array — parse defensively before reading.
+    const markets = rawMarkets.map(m => {
+      const outcomePrices = parseJsonArraySafe(m.outcomePrices as unknown as string);
+      const yesPrice = parseFloat(outcomePrices[0] ?? '0.5');
+      return {
+        id: m.id,
+        question: m.question,
+        price: Number.isFinite(yesPrice) ? yesPrice : 0.5,
+        change: m.oneDayPriceChange ?? 0,
+        volume24h: m.volume24hr ?? 0,
+        liquidity: parseFloat(m.liquidity ?? '0'),
+      };
+    });
 
     const sorted = [...markets].sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
     const movers = sorted.filter(m => Math.abs(m.change) >= MOVE_THRESHOLD).slice(0, MAX_MOVERS);
@@ -59,10 +64,12 @@ export async function GET() {
 
     if (apiKey) {
       const marketSummaries = movers.map((m, i) => {
-        const headlines = newsResults[i].map(n => `- ${n.title} (${n.source})`).join('\n');
+        const headlines = newsResults[i]
+          .map(n => `- ${JSON.stringify(n.title)} (${JSON.stringify(n.source)})`)
+          .join('\n');
         const direction = m.change > 0 ? 'UP' : 'DOWN';
         const pct = Math.abs(m.change * 100).toFixed(1);
-        return `Market ${i + 1}: "${m.question}" moved ${direction} ${pct}% (now at ${(m.price * 100).toFixed(0)}¢)\nHeadlines:\n${headlines || 'No headlines found'}`;
+        return `Market ${i + 1}: ${JSON.stringify(m.question)} moved ${direction} ${pct}% (now at ${(m.price * 100).toFixed(0)}¢)\nHeadlines:\n${headlines || 'No headlines found'}`;
       }).join('\n\n');
 
       const prompt = `You are a prediction market analyst. For each market below, write ONE terse sentence (max 15 words) explaining WHY it moved based on the headlines. Focus on the specific news catalyst. Return ONLY a JSON array of strings, one per market, in order. No markdown, no extra text.

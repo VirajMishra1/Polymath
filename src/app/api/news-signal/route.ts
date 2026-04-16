@@ -15,16 +15,17 @@ export async function POST(req: NextRequest) {
   try {
     const { question, currentPrice } = await req.json() as { question: string; currentPrice: number };
 
-    if (!question || typeof currentPrice !== 'number') {
+    if (!question || typeof question !== 'string' || typeof currentPrice !== 'number' || !Number.isFinite(currentPrice)) {
       return NextResponse.json({ error: 'question and currentPrice required' }, { status: 400 });
     }
+    const safeQuestion = question.slice(0, 300);
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'Gemini not configured' }, { status: 500 });
     }
 
-    const headlines = await fetchNewsForQuery(question.slice(0, 100), 5);
+    const headlines = await fetchNewsForQuery(safeQuestion.slice(0, 100), 5);
 
     if (headlines.length === 0) {
       const signal: NewsSignal = {
@@ -39,12 +40,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ signal });
     }
 
-    const headlineText = headlines.map((h, i) => `${i + 1}. "${h.title}" — ${h.source} (${h.timestamp})`).join('\n');
+    const headlineText = headlines
+      .map((h, i) => `${i + 1}. ${JSON.stringify(h.title)} — ${JSON.stringify(h.source)} (${JSON.stringify(h.timestamp)})`)
+      .join('\n');
     const currentPct = (currentPrice * 100).toFixed(1);
 
     const prompt = `You are a quantitative prediction market analyst. Analyze whether this Polymarket prediction is correctly priced based on recent news.
 
-MARKET QUESTION: "${question}"
+MARKET QUESTION: ${JSON.stringify(safeQuestion)}
 CURRENT POLYMARKET PRICE: ${currentPct}¢ (implies ${currentPct}% probability of YES)
 
 RECENT HEADLINES:

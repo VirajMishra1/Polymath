@@ -162,7 +162,7 @@ export function NewsTicker({ query }: NewsTickerProps) {
           </div>
           
           <div className="mt-2 pt-1 border-t border-terminal-green/30 text-[8px] text-terminal-green/50 flex justify-between">
-            <span>GEMINI-1.5-FLASH-ENGINE</span>
+            <span>GEMINI-2.5-FLASH-ENGINE</span>
             <span>SECURE TERMINAL</span>
           </div>
         </div>

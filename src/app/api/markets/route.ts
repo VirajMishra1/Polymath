@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getMarkets, mapPolymarketMarketToMarket } from '@/lib/polymarket-api';
 
+function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
+  const n = parseInt(raw ?? '');
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const search = searchParams.get('search') || '';
-  const limit = parseInt(searchParams.get('limit') || '20');
-  const offset = parseInt(searchParams.get('offset') || '0');
+  const search = (searchParams.get('search') || '').slice(0, 200);
+  const limit = clampInt(searchParams.get('limit'), 20, 1, 100);
+  const offset = clampInt(searchParams.get('offset'), 0, 0, 10000);
 
   try {
     const markets = await getMarkets({

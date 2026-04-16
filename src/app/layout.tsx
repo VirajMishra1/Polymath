@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import ErrorReporter from "@/components/ErrorReporter";
 import { Providers } from "@/components/providers";
 import { TerminalHeader } from "@/components/terminal-header";
 import { GlobalKeyboardHandler } from "@/components/global-keyboard-handler";
@@ -18,7 +17,6 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased min-h-screen scanlines crt-effect">
-        <ErrorReporter />
         <Providers>
           <GlobalKeyboardHandler />
           <TerminalHeader />
