@@ -56,10 +56,24 @@ export function PriceChart({
     fetchPriceEvents();
   }, [marketId, data]);
 
+  const filteredData = useMemo(() => {
+    if (data.length === 0 || timeRange === 'ALL') return data;
+    const now = Date.now();
+    const cutoffMs: Record<typeof timeRange, number> = {
+      '1D': 24 * 60 * 60 * 1000,
+      '1W': 7 * 24 * 60 * 60 * 1000,
+      '1M': 30 * 24 * 60 * 60 * 1000,
+      'ALL': Infinity,
+    };
+    const cutoff = now - cutoffMs[timeRange];
+    const sliced = data.filter(d => new Date(d.timestamp).getTime() >= cutoff);
+    return sliced.length >= 2 ? sliced : data.slice(-Math.max(2, Math.floor(data.length * 0.1)));
+  }, [data, timeRange]);
+
   const chartConfig = useMemo(() => {
-    if (data.length === 0) return null;
-    
-    const prices = data.map(d => d.price);
+    if (filteredData.length === 0) return null;
+
+    const prices = filteredData.map(d => d.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const priceRange = maxPrice - minPrice || 0.1;
@@ -82,7 +96,7 @@ export function PriceChart({
   const innerWidth = chartWidth - paddingLeft - paddingRight;
   const innerHeight = chartHeight - paddingTop - paddingBottom;
 
-  const xScale = (index: number) => paddingLeft + (index / (data.length - 1)) * innerWidth;
+  const xScale = (index: number) => paddingLeft + (index / (filteredData.length - 1)) * innerWidth;
   const yScale = (price: number) => {
     if (!chartConfig) return paddingTop;
     const { minPrice, maxPrice } = chartConfig;
@@ -90,38 +104,38 @@ export function PriceChart({
   };
 
   const pathData = useMemo(() => {
-    if (data.length === 0) return '';
-    return data.map((point, i) => {
+    if (filteredData.length === 0) return '';
+    return filteredData.map((point, i) => {
       const x = xScale(i);
       const y = yScale(point.price);
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
     }).join(' ');
-  }, [data, chartConfig]);
+  }, [filteredData, chartConfig]);
 
   const areaPath = useMemo(() => {
-    if (data.length === 0) return '';
-    const linePath = data.map((point, i) => {
+    if (filteredData.length === 0) return '';
+    const linePath = filteredData.map((point, i) => {
       const x = xScale(i);
       const y = yScale(point.price);
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
     }).join(' ');
-    
-    const lastX = xScale(data.length - 1);
+
+    const lastX = xScale(filteredData.length - 1);
     const firstX = xScale(0);
     const bottomY = paddingTop + innerHeight;
-    
+
     return `${linePath} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
-  }, [data, chartConfig]);
+  }, [filteredData, chartConfig]);
 
   const eventDots = useMemo(() => {
     return priceEvents.map(event => {
-      const dataIndex = data.findIndex(d => {
+      const dataIndex = filteredData.findIndex(d => {
         const ts = new Date(d.timestamp).getTime() / 1000;
         return Math.abs(ts - event.timestamp) < 600;
       });
-      
+
       if (dataIndex === -1) return null;
-      
+
       return {
         ...event,
         dataIndex,
@@ -129,7 +143,7 @@ export function PriceChart({
         cy: yScale(event.price)
       };
     }).filter(Boolean) as (PriceEvent & { dataIndex: number; cx: number; cy: number })[];
-  }, [priceEvents, data, chartConfig]);
+  }, [priceEvents, filteredData, chartConfig]);
 
   const handleDotClick = (event: PriceEvent, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -167,20 +181,20 @@ export function PriceChart({
   }, [chartConfig]);
 
   const xAxisTicks = useMemo(() => {
-    if (data.length === 0) return [];
-    const tickCount = Math.min(6, data.length);
-    const step = Math.floor(data.length / tickCount);
+    if (filteredData.length === 0) return [];
+    const tickCount = Math.min(6, filteredData.length);
+    const step = Math.floor(filteredData.length / tickCount);
     return Array.from({ length: tickCount }, (_, i) => {
-      const index = Math.min(i * step, data.length - 1);
+      const index = Math.min(i * step, filteredData.length - 1);
       return {
         index,
         x: xScale(index),
-        label: new Date(data[index].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        label: new Date(filteredData[index].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       };
     });
-  }, [data]);
+  }, [filteredData]);
 
-  if (data.length === 0 || !chartConfig) {
+  if (filteredData.length === 0 || !chartConfig) {
     return (
       <div className={cn("w-full font-mono", className)}>
         <div className="h-[200px] w-full border border-border bg-black flex items-center justify-center">

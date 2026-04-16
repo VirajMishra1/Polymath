@@ -15,6 +15,28 @@ import type { Event } from '@/lib/types';
 
 const categories = ['All', 'Politics', 'Sports', 'Crypto', 'Pop Culture', 'Business', 'Science'];
 
+// Polymarket API returns slugified/inconsistent category strings.
+// Normalize both sides before comparing.
+function normalizeCategory(raw: string): string {
+  return raw.toLowerCase().replace(/[-_\s]+/g, ' ').trim();
+}
+
+const CATEGORY_ALIASES: Record<string, string[]> = {
+  'politics':    ['politics', 'us current affairs', 'ukraine russia', 'current affairs', 'elections'],
+  'sports':      ['sports', 'nba', 'nfl', 'mlb', 'nba playoffs', 'soccer', 'tennis', 'chess'],
+  'crypto':      ['crypto', 'nfts', 'bitcoin', 'ethereum', 'defi', 'airdrops'],
+  'pop culture': ['pop culture', 'culture', 'music', 'entertainment', 'celebrities', 'film'],
+  'business':    ['business', 'economy', 'finance', 'markets', 'stocks'],
+  'science':     ['science', 'technology', 'tech', 'health', 'coronavirus', 'ai'],
+};
+
+function matchesCategory(eventCategory: string | undefined, selected: string): boolean {
+  if (!eventCategory) return false;
+  const norm = normalizeCategory(eventCategory);
+  const aliases = CATEGORY_ALIASES[selected.toLowerCase()] ?? [selected.toLowerCase()];
+  return aliases.some(alias => norm.includes(alias));
+}
+
 function formatVolume(vol: number) {
   if (vol >= 1000000) return `$${(vol / 1000000).toFixed(1)}M`;
   if (vol >= 1000) return `$${(vol / 1000).toFixed(0)}K`;
@@ -147,9 +169,9 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const filteredEvents = selectedCategory === 'All' 
-    ? events 
-    : events.filter(e => e.category?.toLowerCase().includes(selectedCategory.toLowerCase()));
+  const filteredEvents = selectedCategory === 'All'
+    ? events
+    : events.filter(e => matchesCategory(e.category, selectedCategory));
 
   if (loading) {
     return (

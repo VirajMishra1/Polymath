@@ -24,6 +24,11 @@ export function useKeyboardShortcuts() {
         router.push('/');
         break;
 
+      case 'p':
+        e.preventDefault();
+        router.push('/portfolio');
+        break;
+
       case '?':
         e.preventDefault();
         break;

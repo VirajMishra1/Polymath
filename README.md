@@ -2,7 +2,7 @@
 
 A professional-grade terminal interface for analyzing Polymarket prediction markets. Built with Next.js 15, featuring real-time market data, AI-powered analysis, Monte Carlo simulations, and portfolio risk management tools.
 
-**Live Demo:** [https://polymath-tau.vercel.app/](https://polymath-tau.vercel.app/)
+**Live Demo:** [https://polymath-app.vercel.app/](https://polymath-app.vercel.app/)
 
 ![Next.js](https://img.shields.io/badge/Next.js-15-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![License](https://img.shields.io/badge/license-MIT-blue)
 
