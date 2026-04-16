@@ -66,38 +66,52 @@ UNDERPRICED = market price < what news implies (buy signal)
 FAIRLY_PRICED = within 5 percentage points
 INSUFFICIENT_DATA = headlines don't speak to this question`;
 
-    const raw = await callGemini(prompt, apiKey);
-    const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    let parsed: {
-      impliedProbability: number;
-      signal: NewsSignal['signal'];
-      confidence: NewsSignal['confidence'];
-      reasoning: string;
-      headlineSentiments: ('BULLISH' | 'BEARISH' | 'NEUTRAL')[];
-    };
+    let signal: NewsSignal;
 
     try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      return NextResponse.json({ error: 'Analysis failed' }, { status: 500 });
-    }
+      const raw = await callGemini(prompt, apiKey);
+      const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed: {
+        impliedProbability: number;
+        signal: NewsSignal['signal'];
+        confidence: NewsSignal['confidence'];
+        reasoning: string;
+        headlineSentiments: ('BULLISH' | 'BEARISH' | 'NEUTRAL')[];
+      } = JSON.parse(cleaned);
 
-    const signal: NewsSignal = {
-      currentPrice,
-      impliedProbability: parsed.impliedProbability,
-      gap: parsed.impliedProbability != null ? parsed.impliedProbability - currentPrice : null,
-      signal: parsed.signal,
-      confidence: parsed.confidence,
-      reasoning: parsed.reasoning,
-      headlines: headlines.map((h, i) => ({
-        title: h.title,
-        source: h.source,
-        timestamp: h.timestamp,
-        url: h.url,
-        sentiment: parsed.headlineSentiments?.[i] ?? 'NEUTRAL',
-      })),
-    };
+      signal = {
+        currentPrice,
+        impliedProbability: parsed.impliedProbability,
+        gap: parsed.impliedProbability != null ? parsed.impliedProbability - currentPrice : null,
+        signal: parsed.signal,
+        confidence: parsed.confidence,
+        reasoning: parsed.reasoning,
+        headlines: headlines.map((h, i) => ({
+          title: h.title,
+          source: h.source,
+          timestamp: h.timestamp,
+          url: h.url,
+          sentiment: parsed.headlineSentiments?.[i] ?? 'NEUTRAL',
+        })),
+      };
+    } catch {
+      // Gemini failed — return headlines without AI analysis
+      signal = {
+        currentPrice,
+        impliedProbability: null,
+        gap: null,
+        signal: 'INSUFFICIENT_DATA',
+        confidence: 'LOW',
+        reasoning: 'AI analysis unavailable. Review headlines manually.',
+        headlines: headlines.map(h => ({
+          title: h.title,
+          source: h.source,
+          timestamp: h.timestamp,
+          url: h.url,
+          sentiment: 'NEUTRAL' as const,
+        })),
+      };
+    }
 
     return NextResponse.json({ signal });
   } catch (err) {
