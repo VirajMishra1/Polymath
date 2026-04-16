@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getEventById, mapPolymarketEventToEvent, mapPolymarketMarketToMarket } from '@/lib/polymarket-api';
+import {
+  getEventById,
+  getEventBySlug,
+  mapPolymarketEventToEvent,
+  mapPolymarketMarketToMarket,
+} from '@/lib/polymarket-api';
 
 export async function GET(
   request: Request,
@@ -8,13 +13,14 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const event = await getEventById(id);
-    
+    // Callers pass either numeric IDs or slugs. Try id first for numerics
+    // (avoids a wasted round-trip), fall through to slug lookup otherwise.
+    const isNumeric = /^\d+$/.test(id);
+    let event = isNumeric ? await getEventById(id) : null;
+    if (!event) event = await getEventBySlug(id);
+
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
     const mappedEvent = mapPolymarketEventToEvent(event);
