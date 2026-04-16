@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useTerminalStore } from '@/lib/store';
 import { usePortfolioStore } from '@/lib/portfolio-store';
-import { RefreshCw, Brain, TrendingUp, TrendingDown, Minus, X, BarChart3, Shuffle, Shield, Calculator, Sparkles, Newspaper, MessageSquare, Zap, Briefcase } from 'lucide-react';
+import { RefreshCw, Brain, TrendingUp, TrendingDown, Minus, X, BarChart3, Shuffle, Shield, Calculator, Sparkles, Newspaper, MessageSquare, Zap, Briefcase, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import { PriceChart } from '@/components/charts/price-chart';
 import { Orderbook } from '@/components/orderbook';
 import { NewsTicker } from '@/components/news-ticker';
@@ -16,6 +16,7 @@ import { TimeDecayVisualizer } from '@/components/time-decay-visualizer';
 import { ExternalHedgePanel } from '@/components/external-hedge-panel';
 import type { Market, Orderbook as OrderbookType, TimeseriesPoint } from '@/lib/types';
 import type { PriceEvent, MarketArticle } from '@/lib/market-articles';
+import type { NewsSignal } from '@/app/api/news-signal/route';
 
 interface MonteCarloResult {
   simulationCount: number;
@@ -98,7 +99,7 @@ interface AIAnalysisResult {
   historicalPrices: number[];
 }
 
-type AnalysisMode = 'ai' | 'math';
+type AnalysisMode = 'ai' | 'math' | 'signal';
 type MathTab = 'scenario' | 'montecarlo' | 'hedge';
 
 function SimulationChart({ 
@@ -530,6 +531,7 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysisResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [newsSignal, setNewsSignal] = useState<NewsSignal | null>(null);
     const [showAnalysisModal, setShowAnalysisModal] = useState(false);
     const [showCalculatingModal, setShowCalculatingModal] = useState(false);
     const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('ai');
@@ -670,19 +672,38 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
   }, [keyboardShortcutsEnabled, router, showAnalysisModal, selectedPriceEvent]);
 
   const runAnalysis = useCallback(async () => {
-    if (!market || !priceHistory.length) return;
-    
+    if (!market) return;
+
     setAiLoading(true);
     setAiError(null);
     setShowCalculatingModal(true);
-    
+
     try {
+      if (selectedAnalysisType === 'signal') {
+        const [response] = await Promise.all([
+          fetch('/api/news-signal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: market.question, currentPrice: market.price_yes }),
+          }),
+          new Promise(resolve => setTimeout(resolve, 1500)),
+        ]);
+        if (!response.ok) throw new Error('Signal fetch failed');
+        const data = await response.json();
+        setNewsSignal(data.signal);
+        setAnalysisMode('signal');
+        setShowCalculatingModal(false);
+        setShowAnalysisModal(true);
+        return;
+      }
+
+      if (!priceHistory.length) throw new Error('No price history');
       const prices = priceHistory.map(p => p.price);
       const orderbookData = orderbook ? {
         bids: orderbook.bids.map(b => ({ price: b.price, size: b.size })),
         asks: orderbook.asks.map(a => ({ price: a.price, size: a.size }))
       } : { bids: [], asks: [] };
-      
+
       const [response] = await Promise.all([
         fetch('/api/analysis', {
           method: 'POST',
@@ -703,9 +724,9 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
         }),
         new Promise(resolve => setTimeout(resolve, 3500))
       ]);
-      
+
       if (!response.ok) throw new Error('Analysis failed');
-      
+
       const result = await response.json();
       setAiAnalysis(result);
       setAnalysisMode(selectedAnalysisType);
@@ -947,22 +968,42 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
                           <span className="text-xs font-bold font-mono text-cyan-500">Math Prediction</span>
                         </div>
                       </button>
+
+                      <button
+                        onClick={() => setSelectedAnalysisType('signal')}
+                        className={cn(
+                          "w-full p-2 border text-left transition-all",
+                          selectedAnalysisType === 'signal'
+                            ? "border-terminal-green bg-terminal-green/10"
+                            : "border-border hover:border-terminal-green/50"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-3 h-3 text-terminal-green" />
+                          <span className="text-xs font-bold font-mono text-terminal-green">News Signal</span>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground font-mono mt-0.5 ml-5">
+                          Gap between news sentiment & price
+                        </p>
+                      </button>
                     </div>
                     
                     {aiError && (
                       <div className="text-terminal-red text-[9px] mb-2 font-mono">{aiError}</div>
                     )}
                     
-                    <button 
+                    <button
                       onClick={runAnalysis}
-                      disabled={aiLoading || !priceHistory.length}
+                      disabled={aiLoading || (selectedAnalysisType !== 'signal' && !priceHistory.length)}
                       className={cn(
                         "w-full py-2 font-bold uppercase text-xs font-mono transition-all",
-                        aiLoading 
+                        aiLoading
                           ? "bg-terminal-amber/20 border border-terminal-amber text-terminal-amber animate-pulse"
                           : selectedAnalysisType === 'ai'
                             ? "bg-terminal-amber hover:bg-terminal-amber/80 text-black"
-                            : "bg-cyan-600 hover:bg-cyan-500 text-white"
+                            : selectedAnalysisType === 'signal'
+                              ? "bg-terminal-green hover:bg-terminal-green/80 text-black"
+                              : "bg-cyan-600 hover:bg-cyan-500 text-white"
                       )}
                     >
                       {aiLoading ? (
@@ -970,9 +1011,10 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
                           <RefreshCw className="w-3 h-3 animate-spin" />
                           Analyzing...
                         </span>
-                      ) : (
-                        `Run ${selectedAnalysisType === 'ai' ? 'AI' : 'Math'} Analysis`
-                      )}
+                      ) : selectedAnalysisType === 'ai' ? 'Run AI Analysis'
+                        : selectedAnalysisType === 'signal' ? 'Fetch News Signal'
+                        : 'Run Math Analysis'
+                      }
                     </button>
                   </div>
                   
@@ -1073,16 +1115,19 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
             
             <h3 className={cn(
               "text-lg font-bold font-mono uppercase mb-2",
-              selectedAnalysisType === 'ai' ? "text-terminal-amber" : "text-cyan-500"
+              selectedAnalysisType === 'signal' ? "text-terminal-green"
+              : selectedAnalysisType === 'ai' ? "text-terminal-amber" : "text-cyan-500"
             )}>
-              {selectedAnalysisType === 'ai' ? 'Running AI Analysis' : 'Running Simulations'}
+              {selectedAnalysisType === 'signal' ? 'Scanning News' : selectedAnalysisType === 'ai' ? 'Running AI Analysis' : 'Running Simulations'}
             </h3>
-            
+
             <div className="space-y-2 text-center mb-4">
               <p className="text-sm text-muted-foreground font-mono animate-pulse">
-                {selectedAnalysisType === 'ai' 
-                  ? 'Running technical indicator analysis...'
-                  : 'Running 500 Monte Carlo simulations...'}
+                {selectedAnalysisType === 'signal'
+                  ? 'Fetching headlines and computing implied probability...'
+                  : selectedAnalysisType === 'ai'
+                    ? 'Running technical indicator analysis...'
+                    : 'Running 500 Monte Carlo simulations...'}
               </p>
             </div>
             
@@ -1130,7 +1175,119 @@ export default function MarketPage({ params }: { params: Promise<{ id: string }>
         />
       )}
 
-      {showAnalysisModal && aiAnalysis && (
+      {showAnalysisModal && analysisMode === 'signal' && newsSignal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="bg-black border border-terminal-green w-full max-w-xl mx-4 max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-black border-b border-terminal-green p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-terminal-green" />
+                <span className="text-terminal-green font-mono text-sm uppercase">News Signal</span>
+              </div>
+              <button onClick={() => setShowAnalysisModal(false)} className="text-muted-foreground hover:text-white transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Signal verdict */}
+              <div className={cn(
+                "border p-4",
+                newsSignal.signal === 'UNDERPRICED' ? "border-terminal-green bg-terminal-green/5"
+                : newsSignal.signal === 'OVERPRICED' ? "border-terminal-red bg-terminal-red/5"
+                : newsSignal.signal === 'FAIRLY_PRICED' ? "border-terminal-amber bg-terminal-amber/5"
+                : "border-border bg-black/50"
+              )}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn(
+                    "text-2xl font-bold font-mono",
+                    newsSignal.signal === 'UNDERPRICED' ? "text-terminal-green"
+                    : newsSignal.signal === 'OVERPRICED' ? "text-terminal-red"
+                    : newsSignal.signal === 'FAIRLY_PRICED' ? "text-terminal-amber"
+                    : "text-muted-foreground"
+                  )}>
+                    {newsSignal.signal === 'UNDERPRICED' ? '⬆ UNDERPRICED'
+                    : newsSignal.signal === 'OVERPRICED' ? '⬇ OVERPRICED'
+                    : newsSignal.signal === 'FAIRLY_PRICED' ? '= FAIRLY PRICED'
+                    : '? INSUFFICIENT DATA'}
+                  </div>
+                  <span className={cn(
+                    "text-[10px] px-2 py-1 border font-mono uppercase",
+                    newsSignal.confidence === 'HIGH' ? "border-terminal-green text-terminal-green"
+                    : newsSignal.confidence === 'MEDIUM' ? "border-terminal-amber text-terminal-amber"
+                    : "border-muted-foreground text-muted-foreground"
+                  )}>
+                    {newsSignal.confidence} confidence
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <div className="text-[9px] text-muted-foreground uppercase font-mono mb-0.5">Market Price</div>
+                    <div className="text-lg font-bold font-mono text-foreground">
+                      {(newsSignal.currentPrice * 100).toFixed(1)}¢
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-muted-foreground uppercase font-mono mb-0.5">News Implies</div>
+                    <div className="text-lg font-bold font-mono text-terminal-green">
+                      {newsSignal.impliedProbability != null ? `${(newsSignal.impliedProbability * 100).toFixed(1)}¢` : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-muted-foreground uppercase font-mono mb-0.5">Gap</div>
+                    <div className={cn(
+                      "text-lg font-bold font-mono",
+                      (newsSignal.gap ?? 0) > 0 ? "text-terminal-green" : (newsSignal.gap ?? 0) < 0 ? "text-terminal-red" : "text-muted-foreground"
+                    )}>
+                      {newsSignal.gap != null ? `${newsSignal.gap > 0 ? '+' : ''}${(newsSignal.gap * 100).toFixed(1)}¢` : '—'}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground font-mono leading-relaxed">{newsSignal.reasoning}</p>
+              </div>
+
+              {/* Headlines */}
+              {newsSignal.headlines.length > 0 && (
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-mono">Headlines ({newsSignal.headlines.length})</div>
+                  <div className="space-y-2">
+                    {newsSignal.headlines.map((h, i) => (
+                      <a
+                        key={i}
+                        href={h.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-start gap-3 p-2 border border-border hover:border-terminal-green/50 bg-black hover:bg-terminal-green/5 transition-all"
+                      >
+                        <span className={cn(
+                          "text-[9px] px-1.5 py-0.5 border flex-shrink-0 font-mono uppercase mt-0.5",
+                          h.sentiment === 'BULLISH' ? "text-terminal-green border-terminal-green/50"
+                          : h.sentiment === 'BEARISH' ? "text-terminal-red border-terminal-red/50"
+                          : "text-terminal-amber border-terminal-amber/50"
+                        )}>
+                          {h.sentiment === 'BULLISH' ? <ArrowUp className="w-2 h-2" /> : h.sentiment === 'BEARISH' ? <ArrowDown className="w-2 h-2" /> : <Minus className="w-2 h-2" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-terminal-green font-mono line-clamp-1">{h.title}</p>
+                          <p className="text-[9px] text-muted-foreground font-mono">{h.source} · {h.timestamp}</p>
+                        </div>
+                        <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border p-3 bg-black">
+              <div className="text-[9px] text-muted-foreground font-mono text-center">
+                News sourced from Google News RSS · Probability implied by Gemini 2.5 Flash
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAnalysisModal && (analysisMode === 'ai' || analysisMode === 'math') && aiAnalysis && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
           <div className={cn(
             "bg-black border w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden flex flex-col",

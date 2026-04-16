@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Keyboard, Briefcase } from 'lucide-react';
+import { Keyboard, Briefcase, Zap, GitMerge } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTerminalStore } from '@/lib/store';
 import { usePortfolioStore } from '@/lib/portfolio-store';
@@ -55,6 +55,20 @@ export function TerminalHeader() {
         </div>
 
         <div className="flex items-center gap-4 text-xs font-mono">
+          <Link
+            href="/movers"
+            className="flex items-center gap-2 px-3 py-1 border border-border text-muted-foreground hover:text-terminal-amber hover:border-terminal-amber/50 transition-all"
+          >
+            <Zap className="w-3 h-3" />
+            <span>Movers</span>
+          </Link>
+          <Link
+            href="/correlation"
+            className="flex items-center gap-2 px-3 py-1 border border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-400/50 transition-all"
+          >
+            <GitMerge className="w-3 h-3" />
+            <span>Correlation</span>
+          </Link>
           <Link
             href="/portfolio"
             className={cn(
