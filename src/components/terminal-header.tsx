@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Keyboard, Briefcase, Zap, GitMerge, Scale } from 'lucide-react';
+import { Keyboard, Briefcase, Zap, GitMerge, Scale, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTerminalStore } from '@/lib/store';
 import { usePortfolioStore } from '@/lib/portfolio-store';
@@ -75,6 +75,13 @@ export function TerminalHeader() {
           >
             <Scale className="w-3 h-3" />
             <span>Arbitrage</span>
+          </Link>
+          <Link
+            href="/resolutions"
+            className="flex items-center gap-2 px-3 py-1 border border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-400/50 transition-all"
+          >
+            <Calendar className="w-3 h-3" />
+            <span>Calendar</span>
           </Link>
           <Link
             href="/portfolio"
